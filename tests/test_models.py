@@ -23,48 +23,19 @@ While debugging just these tests it's convenient to use this:
     nosetests --stop tests/test_models.py:TestProductModel
 
 """
-import os
-import logging
-import unittest
 from decimal import Decimal
-from service.models import Product, Category, db
-from service import app
+from service.models import Product, Category, DataValidationError
 from tests.factories import ProductFactory
 
-DATABASE_URI = os.getenv(
-    "DATABASE_URI", "postgresql://postgres:postgres@localhost:5432/postgres"
-)
+from .test_base import TestBase
 
 
 ######################################################################
 #  P R O D U C T   M O D E L   T E S T   C A S E S
 ######################################################################
-# pylint: disable=too-many-public-methods
-class TestProductModel(unittest.TestCase):
+# pylint: disable=too-many-public-methods,unnecessary-lambda
+class TestProductModel(TestBase):
     """Test Cases for Product Model"""
-
-    @classmethod
-    def setUpClass(cls):
-        """This runs once before the entire test suite"""
-        app.config["TESTING"] = True
-        app.config["DEBUG"] = False
-        app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URI
-        app.logger.setLevel(logging.CRITICAL)
-        # Product.init_db(app)
-
-    @classmethod
-    def tearDownClass(cls):
-        """This runs once after the entire test suite"""
-        db.session.close()
-
-    def setUp(self):
-        """This runs before each test"""
-        db.session.query(Product).delete()  # clean up the last tests
-        db.session.commit()
-
-    def tearDown(self):
-        """This runs after each test"""
-        db.session.remove()
 
     ######################################################################
     #  T E S T   C A S E S
@@ -104,3 +75,163 @@ class TestProductModel(unittest.TestCase):
     #
     # ADD YOUR TEST CASES HERE
     #
+    def test_read_a_product(self):
+        """It should Read a Product"""
+        product = ProductFactory()
+        product.id = None
+        product.create()
+        self.assertIsNotNone(product.id)
+        # Fetch it back
+        found_product = Product.find(product.id)
+        self.assertEqual(found_product.id, product.id)
+        self.assertEqual(found_product.name, product.name)
+        self.assertEqual(found_product.description, product.description)
+        self.assertEqual(found_product.price, product.price)
+
+    def test_update_a_product(self):
+        """It should Update a Product"""
+        product = ProductFactory()
+        product.id = None
+        product.create()
+        self.assertIsNotNone(product.id)
+        # Update the product
+        product.description = "This is the greatest product"
+        product.update()
+        # Fetch it back
+        all_products = Product.all()
+        self.assertEqual(len(all_products), 1)
+        found_product = all_products[0]
+        self.assertEqual(found_product.id, product.id)
+        self.assertEqual(found_product.description, "This is the greatest product")
+
+    def test_update_a_product_no_id(self):
+        """It should Update a Product"""
+        product = ProductFactory()
+        product.id = None
+        self.assertRaises(DataValidationError, lambda: product.update())
+
+    def test_delete_a_product(self):
+        """It should Delete a Product"""
+        product = ProductFactory()
+        product.create()
+        self.assertEqual(len(Product.all()), 1)
+        # delete the product and make sure it isn't in the database
+        product.delete()
+        self.assertEqual(len(Product.all()), 0)
+
+    def test_list_all_products(self):
+        """It should List all Products in the database"""
+        products = Product.all()
+        self.assertEqual(len(Product.all()), 0)
+        products = ProductFactory.create_batch(5)
+        for product in products:
+            product.create()
+        products = Product.all()
+        self.assertEqual(len(Product.all()), 5)
+
+    def test_find_by_name(self):
+        """It should Find a Product by Name"""
+        products = ProductFactory.create_batch(5)
+        for product in products:
+            product.create()
+        name = products[0].name
+        same_name_products = [product for product in products if product.name == name]
+        count = len(same_name_products)
+        db_products = Product.find_by_name(name)
+        self.assertEqual(db_products.count(), count)
+        for product in db_products:
+            self.assertEqual(product.name, name)
+
+    def test_find_by_availability(self):
+        """It should Find Products by Availability"""
+        products = ProductFactory.create_batch(10)
+        for product in products:
+            product.create()
+        available = products[0].available
+        same_available_products = [product for product in products if product.available == available]
+        count = len(same_available_products)
+        db_products = Product.find_by_availability(available)
+        self.assertEqual(db_products.count(), count)
+        for product in db_products:
+            self.assertEqual(product.available, available)
+
+    def test_find_by_category(self):
+        """It should Find Products by Category"""
+        products = ProductFactory.create_batch(10)
+        for product in products:
+            product.create()
+        category = products[0].category
+        same_category_products = [product for product in products if product.category == category]
+        count = len(same_category_products)
+        db_products = Product.find_by_category(category)
+        self.assertEqual(db_products.count(), count)
+        for product in db_products:
+            self.assertEqual(product.category, category)
+
+    def test_find_by_price(self):
+        """It should Find Products by Price"""
+        products = ProductFactory.create_batch(10)
+        # Set three prices to 25.95
+        price = Decimal("25.95")  # Always intialize Decimal with string.
+        for index in [2, 5, 8]:
+            products[index].price = price
+        for product in products:
+            product.create()
+        same_price_products = [product for product in products if product.price == price]
+        count = len(same_price_products)
+        self.assertEqual(count, 3)
+        db_products = Product.find_by_price(price)
+        self.assertEqual(db_products.count(), count)
+        for product in db_products:
+            self.assertEqual(product.price, price)
+        # Also test with price as string.
+        db_products = Product.find_by_price("25.95")
+        self.assertEqual(db_products.count(), count)
+
+    def test_deserialize(self):
+        """Deserialize a dictionary."""
+        product = ProductFactory()
+        valid_data = {
+            "name": "My Product",
+            "description": "The bestest thing since sliced bread",
+            "price": Decimal(100.00),
+            "available": True,
+            "category": "FOOD",
+        }
+        product.deserialize(valid_data)
+        self.assertEqual(product.name, valid_data["name"])
+
+    def test_deserialize_invalid(self):
+        """Deserialize a dictionary with invalid category."""
+        product = ProductFactory()
+        valid_data = {
+            "name": "My Product",
+            "description": "The bestest thing since sliced bread",
+            "price": Decimal(100.00),
+            "available": True,
+            "category": Category.FOOD,  # Should be a string, not a category
+        }
+        self.assertRaises(DataValidationError, lambda: product.deserialize(valid_data))
+
+    def test_deserialize_invalid_bool(self):
+        """Deserialize a dictionary with invalid available."""
+        product = ProductFactory()
+        valid_data = {
+            "name": "My Product",
+            "description": "The bestest thing since sliced bread",
+            "price": Decimal(100.00),
+            "available": "Unfortunately not",
+            "category": "FOOD",
+        }
+        self.assertRaises(DataValidationError, lambda: product.deserialize(valid_data))
+
+    def test_deserialize_invalid_missing_name(self):
+        """Deserialize a dictionary with missing_name."""
+        product = ProductFactory()
+        valid_data = {
+            "description": "The bestest thing since sliced bread",
+            "price": Decimal(100.00),
+            "available": True,
+            "category": "FOOD",
+        }
+        self.assertRaises(DataValidationError, lambda: product.deserialize(valid_data))

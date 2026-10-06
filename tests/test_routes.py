@@ -24,23 +24,14 @@ Test cases can be run with the following:
   While debugging just these tests it's convenient to use this:
     nosetests --stop tests/test_service.py:TestProductService
 """
-import os
 import logging
 from decimal import Decimal
-from unittest import TestCase
 from service import app
 from service.common import status
-from service.models import db, init_db, Product
 from tests.factories import ProductFactory
 
-# Disable all but critical errors during normal test run
-# uncomment for debugging failing tests
-# logging.disable(logging.CRITICAL)
+from .test_base import TestBase
 
-# DATABASE_URI = os.getenv('DATABASE_URI', 'sqlite:///../db/test.db')
-DATABASE_URI = os.getenv(
-    "DATABASE_URI", "postgresql://postgres:postgres@localhost:5432/postgres"
-)
 BASE_URL = "/products"
 
 
@@ -48,32 +39,13 @@ BASE_URL = "/products"
 #  T E S T   C A S E S
 ######################################################################
 # pylint: disable=too-many-public-methods
-class TestProductRoutes(TestCase):
+class TestProductRoutes(TestBase):
     """Product Service tests"""
-
-    @classmethod
-    def setUpClass(cls):
-        """Run once before all tests"""
-        app.config["TESTING"] = True
-        app.config["DEBUG"] = False
-        # Set up the test database
-        app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URI
-        app.logger.setLevel(logging.CRITICAL)
-        # init_db(app)
-
-    @classmethod
-    def tearDownClass(cls):
-        """Run once after all tests"""
-        db.session.close()
 
     def setUp(self):
         """Runs before each test"""
         self.client = app.test_client()
-        db.session.query(Product).delete()  # clean up the last tests
-        db.session.commit()
-
-    def tearDown(self):
-        db.session.remove()
+        super().setUp()
 
     ############################################################
     # Utility function to bulk create products
