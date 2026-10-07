@@ -21,6 +21,7 @@ This module contains utility functions to set up logging
 consistently
 """
 import logging
+# logging.basicConfig(level=logging.DEBUG)
 
 
 def init_logging(app, logger_name: str):
